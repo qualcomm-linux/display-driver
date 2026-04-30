@@ -2116,6 +2116,7 @@ struct sde_perf_cfg {
  * @ctl                 array of pointers to CTL blocks
  * @sspp_count          number of valid SSPP blocks available
  * @sspp                array of pointers to SSPP blocks
+ * @cwb_virtual_mixers_mask	mask to represent dummy mixer
  * @mixer_count         number of valid LM blocks available
  * @mixer               array of pointers to LM blocks
  * @dspp_top            pointer to common DSPP_TOP block
@@ -2250,6 +2251,7 @@ struct sde_mdss_cfg {
 	u32 sspp_count;
 	struct sde_sspp_cfg sspp[MAX_BLOCKS];
 	u32 mixer_count;
+	u32 cwb_virtual_mixers_mask;
 	struct sde_lm_cfg mixer[MAX_BLOCKS];
 	u32 virtual_mixers_mask;
 

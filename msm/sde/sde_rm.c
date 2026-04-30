@@ -1300,6 +1300,8 @@ static bool _sde_rm_check_lm_and_get_connected_blks(
 {
 	const struct sde_lm_cfg *lm_cfg = to_sde_hw_mixer(lm->hw)->cap;
 	const struct sde_pingpong_cfg *pp_cfg;
+	struct sde_kms *sde_kms = container_of(rm, struct sde_kms, rm);
+	struct sde_mdss_cfg *cat = sde_kms->catalog;
 	bool ret, is_conn_primary, is_conn_secondary;
 	u32 lm_primary_pref, lm_secondary_pref, cwb_pref, dcwb_pref;
 	u32 cac_lb_pref, cac_primary_pref;
@@ -1308,10 +1310,13 @@ static bool _sde_rm_check_lm_and_get_connected_blks(
 	*ds = NULL;
 	*pp = NULL;
 
+	/*In case of virtual mixer enable allocate lm only in case of CWB and yupik target*/
 	if (lm_cfg->features & BIT(SDE_MIXER_IS_VIRTUAL)) {
-		SDE_DEBUG("lm %d hw block is removed and it is a virtual mixer",
-				lm_cfg->id);
-		return false;
+		if (!((RM_RQ_CWB(reqs) && IS_YUPIK_TARGET(cat->hw_rev)))) {
+			SDE_DEBUG("lm %d hw block is removed and it is a virtual mixer",
+					lm_cfg->id);
+			return false;
+		}
 	}
 
 	lm_primary_pref = lm_cfg->features & BIT(SDE_DISP_PRIMARY_PREF);

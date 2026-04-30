@@ -2561,6 +2561,8 @@ static int sde_mixer_parse_dt(struct device_node *np, struct sde_mdss_cfg *sde_c
 			mixer->len = 0;
 			mixer->dummy_mixer = true;
 		}
+		if (BIT(mixer->id - LM_0) & sde_cfg->cwb_virtual_mixers_mask)
+			set_bit(SDE_MIXER_IS_VIRTUAL, &mixer->features);
 
 		mixer->pingpong = pp_count > 0 ? pp_idx + PINGPONG_0
 							: PINGPONG_MAX;
@@ -6040,7 +6042,7 @@ static void _sde_get_hw_caps_for_cape(struct sde_mdss_cfg *sde_cfg, uint32_t hw_
 
 static void _sde_get_hw_caps_for_yupik(struct sde_mdss_cfg *sde_cfg, uint32_t hw_rev)
 {
-	set_bit(SDE_FEATURE_CWB, sde_cfg->features);
+	//set_bit(SDE_FEATURE_CWB, sde_cfg->features);
 	set_bit(SDE_FEATURE_QSYNC, sde_cfg->features);
 	sde_cfg->perf.min_prefill_lines = 40;
 	sde_cfg->vbif_qos_nlvl = 8;
@@ -6057,6 +6059,7 @@ static void _sde_get_hw_caps_for_yupik(struct sde_mdss_cfg *sde_cfg, uint32_t hw
 	sde_cfg->mdss_hw_block_size = 0x158;
 	set_bit(SDE_FEATURE_RC_LM_FLUSH_OVERRIDE, sde_cfg->features);
 	set_bit(SDE_FEATURE_VIRTUAL_CONNECTOR_WB, sde_cfg->features);
+	sde_cfg->cwb_virtual_mixers_mask = 0x2;
 }
 
 static void _sde_get_hw_caps_for_diwali(struct sde_mdss_cfg *sde_cfg, uint32_t hw_rev)
