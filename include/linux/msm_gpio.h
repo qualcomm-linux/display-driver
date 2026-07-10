@@ -24,6 +24,8 @@
  * This shim preserves the legacy integer-GPIO calling convention for
  * out-of-tree drivers that have not yet migrated to the descriptor API.
  *
+ * fwnode_gpiod_get_index() does not mutate the fwnode; the non-const
+ * signature is a kernel API oversight.
  * The cast to (struct fwnode_handle *) drops the const qualifier that
  * of_fwnode_handle() preserves from its const device_node argument.
  * fwnode_gpiod_get_index() does not mutate the fwnode; the non-const

@@ -11,6 +11,7 @@
 #include <linux/bitops.h>
 #include <linux/debugfs.h>
 #include <linux/of_device.h>
+#include <linux/gpio/consumer.h>
 #include <linux/firmware.h>
 #include <linux/ktime.h>
 #include <drm/drm_crtc.h>
@@ -192,7 +193,8 @@ struct dsi_display_ops {
  * @sw_te_using_wd:   Is software te enabled
  * @display_lock:     Mutex for dsi_display interface.
  * @disp_te_gpio:     GPIO for panel TE interrupt.
- * @is_te_irq_enabled:bool to specify whether TE interrupt is enabled.
+ * @disp_te_gpiod:    GPIO descriptor for panel TE interrupt (kernel >= 7.1).
+* @is_te_irq_enabled:bool to specify whether TE interrupt is enabled.
  * @esd_te_gate:      completion gate to signal TE interrupt.
  * @ctrl_count:       Number of DSI interfaces required by panel.
  * @ctrl:             Controller information for DSI display.
@@ -261,6 +263,7 @@ struct dsi_display {
 	bool sw_te_using_wd;
 	struct mutex display_lock;
 	int disp_te_gpio;
+	struct gpio_desc *disp_te_gpiod;
 	bool is_te_irq_enabled;
 	struct completion esd_te_gate;
 

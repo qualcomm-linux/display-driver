@@ -223,7 +223,7 @@ struct dp_hpd *dp_gpio_hpd_get(struct device *dev,
 	const char *hpd_gpio_name = "qcom,dp-hpd-gpio";
 	struct dp_gpio_hpd_private *gpio_hpd;
 	struct dp_pinctrl pinctrl = {0};
-	unsigned int gpio;
+	struct gpio_desc *gpiod;
 
 	if (!dev || !cb) {
 		DP_ERR("invalid device\n");
@@ -231,10 +231,10 @@ struct dp_hpd *dp_gpio_hpd_get(struct device *dev,
 		goto error;
 	}
 
-	gpio = of_get_named_gpio(dev->of_node, hpd_gpio_name, 0);
-	if (!gpio_is_valid(gpio)) {
+	gpiod = devm_gpiod_get(dev, "qcom,dp-hpd", GPIOD_IN);
+	if (IS_ERR(gpiod)) {
 		DP_DEBUG("%s gpio not specified\n", hpd_gpio_name);
-		rc = -EINVAL;
+		rc = PTR_ERR(gpiod);
 		goto error;
 	}
 
@@ -258,22 +258,14 @@ struct dp_hpd *dp_gpio_hpd_get(struct device *dev,
 		}
 	}
 
-	gpio_hpd->gpio_cfg.gpio = gpio;
+	gpio_hpd->gpio_cfg.gpio = desc_to_gpio(gpiod);
 	strscpy(gpio_hpd->gpio_cfg.gpio_name, hpd_gpio_name,
 		sizeof(gpio_hpd->gpio_cfg.gpio_name));
 	gpio_hpd->gpio_cfg.value = 0;
 
-	rc = gpio_request(gpio_hpd->gpio_cfg.gpio,
-		gpio_hpd->gpio_cfg.gpio_name);
-	if (rc) {
-		DP_ERR("%s: failed to request gpio\n", hpd_gpio_name);
-		goto gpio_error;
-	}
-	gpio_direction_input(gpio_hpd->gpio_cfg.gpio);
-
 	gpio_hpd->dev = dev;
 	gpio_hpd->cb = cb;
-	gpio_hpd->irq = gpio_to_irq(gpio_hpd->gpio_cfg.gpio);
+	gpio_hpd->irq = gpiod_to_irq(gpiod);
 	INIT_DELAYED_WORK(&gpio_hpd->work, dp_gpio_hpd_work);
 
 	gpio_hpd->base.simulate_connect = dp_gpio_hpd_simulate_connect;

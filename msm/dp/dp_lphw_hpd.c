@@ -350,7 +350,7 @@ struct dp_hpd *dp_lphw_hpd_get(struct device *dev, struct dp_parser *parser,
 	int rc = 0;
 	const char *hpd_gpio_name = "qcom,dp-hpd-gpio";
 	struct dp_lphw_hpd_private *lphw_hpd = NULL;
-	unsigned int gpio;
+	struct gpio_desc *gpiod;
 
 	if (!dev || !parser || !cb) {
 		DP_ERR("invalid device\n");
@@ -358,10 +358,10 @@ struct dp_hpd *dp_lphw_hpd_get(struct device *dev, struct dp_parser *parser,
 		goto error;
 	}
 
-	gpio = of_get_named_gpio(dev->of_node, hpd_gpio_name, 0);
-	if (!gpio_is_valid(gpio)) {
+	gpiod = devm_gpiod_get(dev, "qcom,dp-hpd", GPIOD_IN);
+	if (IS_ERR(gpiod)) {
 		DP_DEBUG("%s gpio not specified\n", hpd_gpio_name);
-		rc = -EINVAL;
+		rc = PTR_ERR(gpiod);
 		goto error;
 	}
 
@@ -371,22 +371,14 @@ struct dp_hpd *dp_lphw_hpd_get(struct device *dev, struct dp_parser *parser,
 		goto error;
 	}
 
-	lphw_hpd->gpio_cfg.gpio = gpio;
+	lphw_hpd->gpio_cfg.gpio = desc_to_gpio(gpiod);
 	strscpy(lphw_hpd->gpio_cfg.gpio_name, hpd_gpio_name,
 		sizeof(lphw_hpd->gpio_cfg.gpio_name));
 	lphw_hpd->gpio_cfg.value = 0;
 
-	rc = gpio_request(lphw_hpd->gpio_cfg.gpio,
-		lphw_hpd->gpio_cfg.gpio_name);
-	if (rc) {
-		DP_ERR("%s: failed to request gpio\n", hpd_gpio_name);
-		goto gpio_error;
-	}
-	gpio_direction_input(lphw_hpd->gpio_cfg.gpio);
-
 	lphw_hpd->dev = dev;
 	lphw_hpd->cb = cb;
-	lphw_hpd->irq = gpio_to_irq(lphw_hpd->gpio_cfg.gpio);
+	lphw_hpd->irq = gpiod_to_irq(gpiod);
 
 	rc = dp_lphw_hpd_create_workqueue(lphw_hpd);
 	if (rc) {

@@ -7,6 +7,7 @@
 #include <linux/list.h>
 #include <linux/of.h>
 #include <linux/msm_gpio.h>
+#include <linux/gpio/consumer.h>
 #include <linux/err.h>
 #include <linux/version.h>
 #include <linux/ktime.h>
@@ -711,8 +712,16 @@ static void dsi_display_parse_te_data(struct dsi_display *display)
 		return;
 	}
 
-	display->disp_te_gpio = of_get_named_gpio(dev->of_node,
-					"qcom,platform-te-gpio", 0);
+	display->disp_te_gpiod = devm_gpiod_get(dev, "qcom,platform-te",
+					GPIOD_IN);
+	if (IS_ERR(display->disp_te_gpiod)) {
+		DSI_DEBUG("te gpio not specified, rc=%ld\n",
+			PTR_ERR(display->disp_te_gpiod));
+		display->disp_te_gpiod = NULL;
+		display->disp_te_gpio = -EINVAL;
+	} else {
+		display->disp_te_gpio = desc_to_gpio(display->disp_te_gpiod);
+	}
 
 	if (display->fw)
 		rc = dsi_parser_read_u32(display->parser_node,
@@ -6041,6 +6050,7 @@ static int dsi_display_get_io_resources(struct msm_io_res *io_res, void *data)
 	struct dsi_display *display;
 	struct platform_device *pdev;
 	int te_gpio, avdd_gpio;
+	struct gpio_desc *avdd_gpiod;
 
 	if (!data)
 		return -EINVAL;
@@ -6063,7 +6073,7 @@ static int dsi_display_get_io_resources(struct msm_io_res *io_res, void *data)
 	if (rc)
 		return rc;
 
-	te_gpio = of_get_named_gpio(pdev->dev.of_node, "qcom,platform-te-gpio", 0);
+	te_gpio = display->disp_te_gpio;
 	if (gpio_is_valid(te_gpio)) {
 		rc = msm_dss_get_gpio_io_mem(te_gpio, &io_res->mem);
 		if (rc) {
@@ -6073,8 +6083,9 @@ static int dsi_display_get_io_resources(struct msm_io_res *io_res, void *data)
 		}
 	}
 
-	avdd_gpio = of_get_named_gpio(pdev->dev.of_node,
-			"qcom,avdd-regulator-gpio", 0);
+	avdd_gpiod = devm_gpiod_get(&pdev->dev, "qcom,avdd-regulator",
+			GPIOD_ASIS);
+	avdd_gpio = IS_ERR(avdd_gpiod) ? -EINVAL : desc_to_gpio(avdd_gpiod);
 	if (gpio_is_valid(avdd_gpio)) {
 		rc = msm_dss_get_gpio_io_mem(avdd_gpio, &io_res->mem);
 		if (rc)
