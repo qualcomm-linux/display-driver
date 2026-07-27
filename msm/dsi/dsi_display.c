@@ -3547,10 +3547,30 @@ static int dsi_panel_update_from_mipi_dsi_device(struct dsi_panel *panel,
 	/*
 	 * Panel mode: video if MIPI_DSI_MODE_VIDEO is set, otherwise cmd mode.
 	 */
-	if (dsi->mode_flags & MIPI_DSI_MODE_VIDEO)
+	if (dsi->mode_flags & MIPI_DSI_MODE_VIDEO) {
 		panel->panel_mode = DSI_OP_VIDEO_MODE;
-	else
+
+		if (dsi->mode_flags & MIPI_DSI_MODE_VIDEO_BURST)
+			panel->video_config.traffic_mode =
+					DSI_VIDEO_TRAFFIC_BURST_MODE;
+		else if (dsi->mode_flags & MIPI_DSI_MODE_VIDEO_SYNC_PULSE)
+			panel->video_config.traffic_mode =
+					DSI_VIDEO_TRAFFIC_SYNC_PULSES;
+		else
+			panel->video_config.traffic_mode =
+					DSI_VIDEO_TRAFFIC_SYNC_START_EVENTS;
+
+		panel->video_config.pulse_mode_hsa_he =
+			dsi->mode_flags & MIPI_DSI_MODE_VIDEO_HSE;
+
+		/* Always set low power stop mode for BLLP
+		 * to let command engine send packets
+		 */
+		panel->video_config.eof_bllp_lp11_en = true;
+		panel->video_config.bllp_lp11_en     = true;
+	} else {
 		panel->panel_mode = DSI_OP_CMD_MODE;
+	}
 
 	/*
 	 * Clock lane HS: stay continuous unless MIPI_DSI_CLOCK_NON_CONTINUOUS
