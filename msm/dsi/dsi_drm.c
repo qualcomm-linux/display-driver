@@ -583,16 +583,26 @@ static bool dsi_bridge_mode_fixup(struct drm_bridge *bridge,
 		return true;
 	}
 
-	/*
-	 * if no timing defined in panel, it must be external mode
-	 * and we'll use empty priv info to populate the mode
-	 */
-	if (display->panel && !display->panel->num_timing_nodes) {
-		*adjusted_mode = *mode;
-		conn_state->msm_mode.base = adjusted_mode;
-		conn_state->msm_mode.private = (int *)&default_priv_info;
-		conn_state->msm_mode.private_flags = 0;
-		return true;
+	if (display->panel && display->panel->host_config.ext_bridge_mode) {
+		int rc_populate;
+
+		if (display->modes) {
+			dsi_panel_put_mode(display->modes);
+			kfree(display->modes);
+			display->modes = NULL;
+			display->panel->num_display_modes = 0;
+		}
+
+		rc_populate = dsi_display_setup_mode_from_drm(
+				display, mode, &display->panel->mipi_device);
+
+		if (!rc_populate && display->modes && display->modes->priv_info) {
+			display->panel->num_display_modes = 1;
+			*adjusted_mode = *mode;
+			conn_state->msm_mode.base = adjusted_mode;
+			dsi_convert_to_msm_mode(display->modes, &conn_state->msm_mode);
+			return true;
+		}
 	}
 
 	convert_to_dsi_mode(mode, &dsi_mode);
@@ -703,6 +713,10 @@ int dsi_conn_get_lm_from_mode(void *display, const struct drm_display_mode *drm_
 		return dsi_display->panel->lm_count;
 	}
 
+	/* TODO: remove the hardcoded topology, derive dynamically based on DPU catalog. */
+	if (dsi_display->panel && dsi_display->panel->host_config.ext_bridge_mode)
+		return 1;
+
 	convert_to_dsi_mode(drm_mode, &dsi_mode);
 	drm_to_dsi_update_overlap(dsi_display, &dsi_mode);
 
@@ -727,20 +741,22 @@ int dsi_conn_get_mode_info(struct drm_connector *connector,
 	int src_bpp, tar_bpp, rc = 0;
 	struct dsi_display *dsi_display = (struct dsi_display *) display;
 
-	if (!drm_mode || !mode_info)
+	if (!drm_mode || !mode_info || !dsi_display || !dsi_display->panel)
 		return -EINVAL;
 
-	if (dsi_display && dsi_display->panel &&
-	    dsi_display->panel->has_drm_panel && !dsi_display->modes) {
+	if (dsi_display->panel->has_drm_panel && !dsi_display->modes) {
 		DSI_ERR("[%s] drm_panel modes not yet populated\n",
 			dsi_display->name);
 		return -EINVAL;
 	}
 
+	if (dsi_display->panel->host_config.ext_bridge_mode)
+		return 0;
+
 	convert_to_dsi_mode(drm_mode, &partial_dsi_mode);
 	drm_to_dsi_update_overlap(dsi_display, &partial_dsi_mode);
 	rc = dsi_display_find_mode(dsi_display, &partial_dsi_mode, sub_mode, &dsi_mode);
-	if (rc || !dsi_mode->priv_info || !dsi_display || !dsi_display->panel)
+	if (rc || !dsi_mode->priv_info)
 		return -EINVAL;
 
 	memset(mode_info, 0, sizeof(*mode_info));
@@ -1100,7 +1116,8 @@ void dsi_conn_set_submode_blob_info(struct drm_connector *conn,
 	}
 
 	if (dsi_display && dsi_display->panel &&
-	    dsi_display->panel->has_drm_panel) {
+	    (dsi_display->panel->has_drm_panel ||
+	     dsi_display->panel->host_config.ext_bridge_mode)) {
 		return;
 	}
 
@@ -1384,7 +1401,7 @@ static int dsi_display_get_drm_modes(struct dsi_display *display,
 	}
 
 	if (drm_mode) {
-		rc = dsi_display_populate_modes_from_drm_panel(display, drm_mode, dsi);
+		rc = dsi_display_setup_mode_from_drm(display, drm_mode, dsi);
 		if (rc) {
 			DSI_ERR("[%s] failed to populate display modes rc=%d\n",
 				display->name, rc);
@@ -1420,6 +1437,11 @@ int dsi_connector_get_modes(struct drm_connector *connector, void *data,
 
 	if (display->panel->has_drm_panel) {
 		count = dsi_display_get_drm_modes(display, connector);
+		goto end;
+	}
+
+	if (display->panel->host_config.ext_bridge_mode) {
+		DSI_DEBUG("ext_bridge_mode: bridge ops not yet installed\n");
 		goto end;
 	}
 
@@ -1505,7 +1527,9 @@ enum drm_mode_status dsi_conn_mode_valid(struct drm_connector *connector,
 		return MODE_ERROR;
 	}
 
-	if (dsi_display && dsi_display->panel && dsi_display->panel->has_drm_panel){
+	if (dsi_display && dsi_display->panel &&
+		   (dsi_display->panel->has_drm_panel ||
+		    dsi_display->panel->host_config.ext_bridge_mode)) {
 		return MODE_OK;
 	}
 
@@ -1765,9 +1789,9 @@ void dsi_conn_set_allowed_mode_switch(struct drm_connector *connector,
 		return;
 	}
 
-	if(disp->panel->has_drm_panel){
+	if (disp->panel->has_drm_panel ||
+	    disp->panel->host_config.ext_bridge_mode)
 		return;
-	}
 
 	panel = disp->panel;
 	list_for_each_entry(drm_mode, &connector->modes, head)

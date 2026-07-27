@@ -8481,6 +8481,11 @@ int dsi_display_get_default_lms(void *dsi_display, u32 *num_lm)
 		return 0;
 	}
 
+	if (display->panel && display->panel->host_config.ext_bridge_mode) {
+		*num_lm = 1;
+		return 0;
+	}
+
 	mutex_lock(&display->display_lock);
 	count = display->panel->num_display_modes;
 	mutex_unlock(&display->display_lock);
