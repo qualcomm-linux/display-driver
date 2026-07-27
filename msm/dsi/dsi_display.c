@@ -6990,14 +6990,35 @@ int dsi_display_drm_bridge_deinit(struct dsi_display *display)
 /* Hook functions to call external connector, pointer validation is
  * done in dsi_display_drm_ext_bridge_init.
  */
+
+static struct drm_bridge *dsi_display_get_ext_bridge(struct dsi_display *display)
+{
+	if (display && display->ext_bridge_cnt > 0) {
+		return display->ext_bridge[0].bridge;
+	}
+	return NULL;
+}
+
 static enum drm_connector_status dsi_display_drm_ext_detect(
 		struct drm_connector *connector,
 		bool force,
 		void *disp)
 {
+	enum drm_connector_status status = connector_status_unknown;
 	struct dsi_display *display = disp;
+	struct drm_bridge *ext_bridge;
 
-	return display->ext_conn->funcs->detect(display->ext_conn, force);
+	ext_bridge = dsi_display_get_ext_bridge(display);
+	if (ext_bridge && ext_bridge->funcs && ext_bridge->funcs->detect) {
+		#if (KERNEL_VERSION(6, 16, 0) > LINUX_VERSION_CODE)
+				status = ext_bridge->funcs->detect(ext_bridge);
+		#else
+				status = ext_bridge->funcs->detect(ext_bridge, connector);
+		#endif
+		return status;
+	}
+
+	return connector_status_unknown;
 }
 
 static int dsi_display_drm_ext_get_modes(
@@ -7005,23 +7026,33 @@ static int dsi_display_drm_ext_get_modes(
 		const struct msm_resource_caps_info *avail_res)
 {
 	struct dsi_display *display = disp;
-	struct drm_display_mode *pmode, *pt;
-	int count;
+	struct drm_bridge *ext_bridge;
+	const struct drm_edid *edid;
+	int count = 0;
+
+	ext_bridge = dsi_display_get_ext_bridge(display);
 
 	/* if there are modes defined in panel, ignore external modes */
 	if (display->panel->num_timing_nodes)
 		return dsi_connector_get_modes(connector, disp, avail_res);
 
-	count = display->ext_conn->helper_private->get_modes(
-			display->ext_conn);
-
-	list_for_each_entry_safe(pmode, pt,
-			&display->ext_conn->probed_modes, head) {
-		list_move_tail(&pmode->head, &connector->probed_modes);
+	if (!ext_bridge || !ext_bridge->funcs) {
+		DSI_ERR("[%s] ext bridge not ready\n", display->name);
+		return 0;
 	}
 
-	connector->display_info = display->ext_conn->display_info;
-
+	if (ext_bridge->funcs->get_modes) {
+		count = ext_bridge->funcs->get_modes(ext_bridge, connector);
+	} else if (ext_bridge->funcs->edid_read) {
+		const struct drm_edid *drm_edid =
+			ext_bridge->funcs->edid_read(ext_bridge, connector);
+		if (!IS_ERR_OR_NULL(drm_edid)) {
+			drm_edid_connector_update(connector, drm_edid);
+			count = drm_edid_connector_add_modes(connector);
+			drm_edid_free(drm_edid);
+		}
+	}
+	DSI_DEBUG("[%s] ext bridge get_modes count=%d\n", display->name, count);
 	return count;
 }
 
@@ -7030,16 +7061,23 @@ static enum drm_mode_status dsi_display_drm_ext_mode_valid(
 		struct drm_display_mode *mode,
 		void *disp, const struct msm_resource_caps_info *avail_res)
 {
+	struct drm_display_info *info = &connector->display_info;
 	struct dsi_display *display = disp;
 	enum drm_mode_status status;
+	struct drm_bridge *ext_bridge;
 
+	ext_bridge = dsi_display_get_ext_bridge(display);
 	/* always do internal mode_valid check */
 	status = dsi_conn_mode_valid(connector, mode, disp, avail_res);
 	if (status != MODE_OK)
 		return status;
 
-	return display->ext_conn->helper_private->mode_valid(
-			display->ext_conn, mode);
+	if (ext_bridge && ext_bridge->funcs && ext_bridge->funcs->mode_valid) {
+		status = ext_bridge->funcs->mode_valid(ext_bridge, info, mode);
+		return status;
+	}
+
+	return MODE_OK;
 }
 
 static int dsi_display_drm_ext_atomic_check(struct drm_connector *connector,
@@ -7047,12 +7085,31 @@ static int dsi_display_drm_ext_atomic_check(struct drm_connector *connector,
 		struct drm_atomic_state *state)
 {
 	struct dsi_display *display = disp;
-	struct drm_connector_state *c_state;
+	struct drm_connector_state *conn_state;
+	struct drm_crtc_state *crtc_state;
+	struct drm_bridge *ext_bridge;
+	struct drm_bridge_state *bridge_state = NULL;
 
-	c_state = drm_atomic_get_new_connector_state(state, connector);
+	conn_state = drm_atomic_get_new_connector_state(state, connector);
+	if (!conn_state)
+		return -EINVAL;
 
-	return display->ext_conn->helper_private->atomic_check(
-			display->ext_conn, state);
+	if (!conn_state->crtc)
+		return 0;
+
+	crtc_state = drm_atomic_get_new_crtc_state(state, conn_state->crtc);
+	if (!crtc_state)
+		return -EINVAL;
+
+	ext_bridge = dsi_display_get_ext_bridge(display);
+	if (ext_bridge && ext_bridge->funcs && ext_bridge->funcs->atomic_check) {
+		/* get the bridge state if the bridge uses atomic state */
+		bridge_state = drm_atomic_get_new_bridge_state(state, ext_bridge);
+		return ext_bridge->funcs->atomic_check(ext_bridge, bridge_state,
+						       crtc_state, conn_state);
+	}
+
+	return 0;
 }
 
 static int dsi_display_ext_get_info(struct drm_connector *connector,
@@ -7338,7 +7395,6 @@ int dsi_display_drm_ext_bridge_init(struct dsi_display *display,
 	struct drm_device *drm;
 	struct drm_bridge *bridge;
 	struct drm_bridge *ext_bridge;
-	struct drm_connector *ext_conn;
 	struct sde_connector *sde_conn;
 	struct drm_bridge *prev_bridge;
 	int rc = 0, i;
@@ -7360,7 +7416,6 @@ int dsi_display_drm_ext_bridge_init(struct dsi_display *display,
 	for (i = 0; i < display->ext_bridge_cnt; i++) {
 		struct dsi_display_ext_bridge *ext_bridge_info =
 				&display->ext_bridge[i];
-		struct drm_encoder *c_encoder;
 
 		/* return if ext bridge is already initialized */
 		if (ext_bridge_info->bridge)
@@ -7401,65 +7456,21 @@ int dsi_display_drm_ext_bridge_init(struct dsi_display *display,
 		ext_bridge_info->bridge = ext_bridge;
 		prev_bridge = ext_bridge;
 
-		/* ext bridge will init its own connector during attach,
-		 * we need to extract it out of the connector list
+		/*
+		 * ext bridge will not init its own connector during attach,
+		 * we need to hook up the functions to use external connector
 		 */
-		spin_lock_irq(&drm->mode_config.connector_list_lock);
-		ext_conn = list_last_entry(&drm->mode_config.connector_list,
-			struct drm_connector, head);
 
-		if (!ext_conn) {
-			DSI_ERR("failed to get external connector\n");
-			rc = PTR_ERR(ext_conn);
+		sde_conn->ops.detect = dsi_display_drm_ext_detect;
 
-			spin_unlock_irq(&drm->mode_config.connector_list_lock);
-			goto error;
-		}
+		sde_conn->ops.get_modes =
+			dsi_display_drm_ext_get_modes;
 
-		drm_connector_for_each_possible_encoder(ext_conn, c_encoder)
-			break;
+		sde_conn->ops.mode_valid =
+			dsi_display_drm_ext_mode_valid;
 
-		if (!c_encoder) {
-			DSI_ERR("failed to get encoder\n");
-			rc = PTR_ERR(c_encoder);
-
-			spin_unlock_irq(&drm->mode_config.connector_list_lock);
-			goto error;
-		}
-
-		if (ext_conn && ext_conn != connector &&
-			c_encoder->base.id == bridge->encoder->base.id) {
-			list_del_init(&ext_conn->head);
-			display->ext_conn = ext_conn;
-		}
-		spin_unlock_irq(&drm->mode_config.connector_list_lock);
-
-		/* if there is no valid external connector created, or in split
-		 * mode, default setting is used from panel defined in DT file.
-		 */
-		if (!display->ext_conn ||
-		    !display->ext_conn->funcs ||
-		    !display->ext_conn->helper_private ||
-		    display->ext_bridge_cnt > 1) {
-			display->ext_conn = NULL;
-			continue;
-		}
-
-		/* otherwise, hook up the functions to use external connector */
-		if (display->ext_conn->funcs->detect)
-			sde_conn->ops.detect = dsi_display_drm_ext_detect;
-
-		if (display->ext_conn->helper_private->get_modes)
-			sde_conn->ops.get_modes =
-				dsi_display_drm_ext_get_modes;
-
-		if (display->ext_conn->helper_private->mode_valid)
-			sde_conn->ops.mode_valid =
-				dsi_display_drm_ext_mode_valid;
-
-		if (display->ext_conn->helper_private->atomic_check)
-			sde_conn->ops.atomic_check =
-				dsi_display_drm_ext_atomic_check;
+		sde_conn->ops.atomic_check =
+			dsi_display_drm_ext_atomic_check;
 
 		sde_conn->ops.get_info =
 				dsi_display_ext_get_info;
