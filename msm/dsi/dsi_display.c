@@ -11,6 +11,7 @@
 #include <linux/err.h>
 #include <linux/version.h>
 #include <linux/ktime.h>
+#include <drm/drm_of.h>
 #if __has_include(<linux/pinctrl/qcom-pinctrl.h>)
 #include <linux/pinctrl/qcom-pinctrl.h>
 #else
@@ -6189,34 +6190,6 @@ static int dsi_display_get_display_node_count(struct dsi_display *display)
 	return dsi_display_node_count;
 }
 
-struct drm_panel* dsi_display_get_drm_panel_from_dt(struct dsi_display *display)
-{
-	struct device_node *np;
-	struct device_node *panel_np;
-	struct drm_panel *panel;
-
-	if (!display || !display->pdev)
-		return ERR_PTR(-EINVAL);
-
-	np = display->pdev->dev.of_node;
-	if (!np)
-		return ERR_PTR(-ENODEV);
-
-	panel_np = of_graph_get_remote_node(np, 0 , 0);
-	if (!panel_np)
-		return ERR_PTR(-ENODEV);
-
-	panel = of_drm_find_panel(panel_np);
-
-	of_node_put(panel_np);
-
-	if (IS_ERR(panel)){
-		DSI_DEBUG("DRM panel not found\n");
-	}
-
-	return panel;
-}
-
 /**
  * dsi_display_bind - bind dsi device with controlling device
  * @dev:        Pointer to base of platform device
@@ -6385,18 +6358,36 @@ static int dsi_display_bind(struct device *dev,
 
 	if (display->has_drm_panel_or_bridge &&
 	    display->panel && !display->panel->host_config.ext_bridge_mode) {
-		struct drm_panel *panel;
+		struct drm_panel *panel = NULL;
+		struct drm_bridge *ext_bridge = NULL;
+		struct device_node *np = display->pdev->dev.of_node;
+		int ret;
 
-		panel = dsi_display_get_drm_panel_from_dt(display);
-		if (!IS_ERR_OR_NULL(panel)) {
-			display->panel->drm_panel    = panel;
-			display->panel->has_drm_panel = true;
+		ret = drm_of_find_panel_or_bridge(np, 0, 0, &panel, &ext_bridge);
 
-			/* Update stub name to the real upstream driver name */
-			if (panel->dev && panel->dev->driver){
-				display->name = panel->dev->driver->name;
+		if (!ret) {
+			if (panel) {
+				display->panel->drm_panel    = panel;
+				display->panel->has_drm_panel = true;
+
+				if (panel->dev && panel->dev->driver)
+					display->name = panel->dev->driver->name;
+
+				DSI_INFO("[%s] bind with DRM panel\n",
+					 display->name);
+
+			} else if (ext_bridge) {
+				display->panel->host_config.ext_bridge_mode = true;
+				display->ext_bridge[0].node_of =
+						of_graph_get_remote_node(np, 0, 0);
+				display->ext_bridge_cnt = 1;
+
+				if (ext_bridge->of_node)
+					display->name = ext_bridge->of_node->name;
+
+				DSI_INFO("[%s] bind with external DRM bridge\n",
+					 display->name);
 			}
-			DSI_INFO("[%s] bind with DRM panel\n", display->name);
 		}
 	}
 
@@ -8253,18 +8244,18 @@ error:
 }
 
 /**
- * dsi_display_populate_modes_from_drm_panel - Allocate and populate
- * display->modes[] from an DRM panel. Converts drm_display_mode
+ * dsi_display_setup_mode_from_drm - Allocate and populate
+ * display->modes[] from a DRM panel/bridge mode. Converts drm_display_mode
  * timing, derives DSC config from mipi_dsi_device::dsc, and computes
  * transfer time. Called once from dsi_display_get_drm_modes().
  *
  * @display:  dsi_display handle
- * @drm_mode: mode reported by the drm panel's get_modes() callback
+ * @drm_mode: mode reported by the get_modes() callback
  * @dsi:      mipi_dsi_device carrying DSC config from panel probe
  *
  * Return: 0 on success, negative errno on failure.
  */
-int dsi_display_populate_modes_from_drm_panel(struct dsi_display *display,
+int dsi_display_setup_mode_from_drm(struct dsi_display *display,
 				       const struct drm_display_mode *drm_mode,
 				       const struct mipi_dsi_device *dsi)
 {
