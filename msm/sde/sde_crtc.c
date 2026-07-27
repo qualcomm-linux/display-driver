@@ -3430,6 +3430,9 @@ void sde_crtc_prepare_commit(struct drm_crtc *crtc,
 
 	SDE_ATRACE_BEGIN("sde_crtc_prepare_commit");
 
+	if (crtc->state->event && crtc->state->active)
+		drm_crtc_vblank_get(crtc);
+
 	/* identify connectors attached to this crtc */
 	cstate->num_connectors = 0;
 
@@ -3908,6 +3911,9 @@ void sde_crtc_complete_commit(struct drm_crtc *crtc,
 	sde_kms = _sde_crtc_get_kms(crtc);
 	if (!sde_kms)
 		return;
+
+	if (crtc->state->event && crtc->state->active)
+		drm_crtc_vblank_put(crtc);
 
 	for (i = 0; i < MAX_DSI_DISPLAYS; i++) {
 		splash_display = &sde_kms->splash_data.splash_display[i];
