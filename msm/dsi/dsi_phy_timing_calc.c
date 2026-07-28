@@ -954,6 +954,11 @@ int dsi_phy_hw_calculate_timing_params(struct dsi_phy_hw *phy,
 		goto error;
 	}
 
+	if (!host->t_clk_post && !host->t_clk_pre) {
+		host->t_clk_post = desc.clk_post.reg_value;
+		host->t_clk_pre  = desc.clk_pre.reg_value;
+	}
+
 error:
 	return rc;
 }

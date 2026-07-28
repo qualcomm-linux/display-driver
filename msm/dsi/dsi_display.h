@@ -472,7 +472,7 @@ int dsi_display_get_modes(struct dsi_display *display,
 			  struct dsi_display_mode **modes);
 
 /**
- * dsi_display_populate_modes_from_drm_panel - Populate display->modes[] for the
+ * dsi_display_setup_mode_from_drm - Populate display->modes[] for the
  * DRM panel using the drm_display_mode
  * and mipi_dsi_device DSC config from the panel driver.
  *
@@ -481,7 +481,7 @@ int dsi_display_get_modes(struct dsi_display *display,
  * @dsi:      mipi_dsi_device whose dsc pointer carries the DSC config.
  * Return: 0 on success, negative error code on failure.
  */
-int dsi_display_populate_modes_from_drm_panel(struct dsi_display *display,
+int dsi_display_setup_mode_from_drm(struct dsi_display *display,
 				       const struct drm_display_mode *drm_mode,
 				       const struct mipi_dsi_device *dsi);
 
@@ -1117,12 +1117,5 @@ int dsi_display_ctl_post_transition(void *display);
 int dsi_display_get_phandle_count(struct dsi_display *display,
 			const char *propname);
 
-/**
- * dsi_display_get_drm_panel_from_dt() - get upstream drm_panel from DT
- * @display:    Handle to display
- *
- * return: pointer to drm_panel or ERR_PTR on failure.
- */
-struct drm_panel *dsi_display_get_drm_panel_from_dt(struct dsi_display *display);
 
 #endif /* _DSI_DISPLAY_H_ */

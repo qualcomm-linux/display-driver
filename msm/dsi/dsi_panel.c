@@ -4632,7 +4632,7 @@ error:
 
 void dsi_panel_put(struct dsi_panel *panel)
 {
-	if (!panel->has_drm_panel) {
+	if (!panel->has_drm_panel && panel->drm_panel) {
 		drm_panel_remove(panel->drm_panel);
 		kfree(panel->drm_panel);
 	}
@@ -4657,7 +4657,7 @@ int dsi_panel_drv_init(struct dsi_panel *panel,
 		return -EINVAL;
 	}
 
-	if (panel->has_drm_panel) {
+	if (panel->has_drm_panel || panel->host_config.ext_bridge_mode) {
 		return rc;
 	}
 
@@ -5336,7 +5336,7 @@ int dsi_panel_pre_prepare(struct dsi_panel *panel)
 		return -EINVAL;
 	}
 
-	if (panel->has_drm_panel) {
+	if (panel->has_drm_panel || panel->host_config.ext_bridge_mode) {
 		return 0;
 	}
 
@@ -5368,7 +5368,7 @@ int dsi_panel_update_pps(struct dsi_panel *panel)
 		return -EINVAL;
 	}
 
-	if (panel->has_drm_panel)
+	if (panel->has_drm_panel || panel->host_config.ext_bridge_mode)
 		return 0;
 
 	mutex_lock(&panel->panel_lock);
@@ -5531,7 +5531,7 @@ int dsi_panel_prepare(struct dsi_panel *panel)
 		return -EINVAL;
 	}
 
-	if (panel->has_drm_panel)
+	if (panel->has_drm_panel || panel->host_config.ext_bridge_mode)
 		return 0;
 
 	mutex_lock(&panel->panel_lock);
@@ -6187,6 +6187,13 @@ int dsi_panel_enable(struct dsi_panel *panel)
 		return 0;
 	}
 
+	if (panel->host_config.ext_bridge_mode) {
+		mutex_lock(&panel->panel_lock);
+		panel->panel_initialized = true;
+		mutex_unlock(&panel->panel_lock);
+		return 0;
+	}
+
 	mutex_lock(&panel->panel_lock);
 
 	rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_ON, false);
@@ -6238,6 +6245,9 @@ int dsi_panel_post_enable(struct dsi_panel *panel)
 		return 0;
 	}
 
+	if (panel->host_config.ext_bridge_mode)
+		return 0;
+
 	mutex_lock(&panel->panel_lock);
 
 	if (panel->need_post_on_supply) {
@@ -6280,6 +6290,9 @@ int dsi_panel_pre_disable(struct dsi_panel *panel)
 		return 0;
 	}
 
+	if (panel->host_config.ext_bridge_mode)
+		return 0;
+
 	mutex_lock(&panel->panel_lock);
 
 	if (gpio_is_valid(panel->bl_config.en_gpio))
@@ -6316,6 +6329,14 @@ int dsi_panel_disable(struct dsi_panel *panel)
 			DSI_ERR("[%s] drm_panel_unprepare failed rc=%d\n",
 				panel->name, rc);
 #endif
+		panel->panel_initialized = false;
+		panel->power_mode = SDE_MODE_DPMS_OFF;
+		mutex_unlock(&panel->panel_lock);
+		return 0;
+	}
+
+	if (panel->host_config.ext_bridge_mode) {
+		mutex_lock(&panel->panel_lock);
 		panel->panel_initialized = false;
 		panel->power_mode = SDE_MODE_DPMS_OFF;
 		mutex_unlock(&panel->panel_lock);
@@ -6364,7 +6385,7 @@ int dsi_panel_unprepare(struct dsi_panel *panel)
 		return -EINVAL;
 	}
 
-	if (panel->has_drm_panel) {
+	if (panel->has_drm_panel || panel->host_config.ext_bridge_mode) {
 		return 0;
 	}
 
@@ -6399,7 +6420,7 @@ int dsi_panel_post_unprepare(struct dsi_panel *panel)
 		return -EINVAL;
 	}
 
-	if (panel->has_drm_panel) {
+	if (panel->has_drm_panel || panel->host_config.ext_bridge_mode) {
 		return 0;
 	}
 
