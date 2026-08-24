@@ -32,6 +32,7 @@
 #include <synx_api.h>
 #endif /* CONFIG_QTI_HW_FENCE */
 
+#include <linux/msm_drm_compat.h>
 #include "sde_power_handle.h"
 #include "sde_trace.h"
 #include "sde_dbg.h"

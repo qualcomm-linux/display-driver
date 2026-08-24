@@ -43,6 +43,7 @@
 
 #include <drm/drm_atomic.h>
 #include <drm/drm_atomic_helper.h>
+#include <linux/msm_drm_compat.h>
 #include <drm/drm_plane_helper.h>
 #include <drm/drm_fb_helper.h>
 #include <drm/msm_drm.h>

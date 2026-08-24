@@ -5,6 +5,7 @@
 #include <linux/err.h>
 #include <linux/slab.h>
 #include "msm_cooling_device.h"
+#include <linux/msm_drm_compat.h>
 
 #define BRIGHTNESS_CDEV_MAX 255
 
