@@ -214,7 +214,26 @@ static void dp_mst_destroy_bridge_state(struct drm_private_obj *obj,
 	kfree(priv_state);
 }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(7, 2, 0))
+static struct drm_private_state *dp_mst_create_bridge_state(
+		struct drm_private_obj *obj)
+{
+	struct dp_mst_bridge_state *state;
+
+	state = kzalloc(sizeof(*state), GFP_KERNEL);
+	if (!state)
+		return ERR_PTR(-ENOMEM);
+
+	__drm_atomic_helper_private_obj_create_state(obj, &state->base);
+
+	return &state->base;
+}
+#endif
+
 static const struct drm_private_state_funcs dp_mst_bridge_state_funcs = {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(7, 2, 0))
+	.atomic_create_state = dp_mst_create_bridge_state,
+#endif
 	.atomic_duplicate_state = dp_mst_duplicate_bridge_state,
 	.atomic_destroy_state = dp_mst_destroy_bridge_state,
 };
